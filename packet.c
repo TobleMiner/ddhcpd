@@ -54,7 +54,9 @@ int _packet_size(int command, int payload_count) {
 
 struct ddhcp_mcast_packet* new_ddhcp_packet(int command, ddhcp_config* config) {
   struct ddhcp_mcast_packet* packet = (struct ddhcp_mcast_packet*) calloc(sizeof(struct ddhcp_mcast_packet), 1);
-  // TODO Check we actually got the memory
+  if (packet == NULL) {
+    return NULL;
+  }
   memcpy(&packet->node_id, config->node_id, 8);
   memcpy(&packet->prefix, &config->prefix, sizeof(struct in_addr));
 
