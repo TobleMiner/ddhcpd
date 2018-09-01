@@ -25,7 +25,7 @@ int main(int argc, char** argv) {
   char* path = "/tmp/ddhcpd_ctl";
 
 #define BUFSIZE_MAX 1500
-  uint8_t* buffer = (uint8_t*) calloc(sizeof(uint8_t), BUFSIZE_MAX);
+  uint8_t buffer[BUFSIZE_MAX];
 
   while ((c = getopt(argc, argv, "C:t:l:bdho:r:V:")) != -1) {
     switch (c) {
@@ -110,7 +110,6 @@ int main(int argc, char** argv) {
 
   if ((ctl_sock = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0)) < 0) {
     perror("can't create socket:");
-    free(buffer);
     return (-1);
   }
 
@@ -122,7 +121,6 @@ int main(int argc, char** argv) {
 
   if (connect(ctl_sock, (struct sockaddr*)&s_un, sizeof(s_un)) < 0) {
     perror("can't connect to control socket");
-    free(buffer);
     close(ctl_sock);
     return -1;
   }
@@ -150,5 +148,4 @@ int main(int argc, char** argv) {
   }
 
   close(ctl_sock);
-  free(buffer);
 }
