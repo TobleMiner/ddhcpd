@@ -37,14 +37,11 @@ struct ddhcp_block {
   time_t timeout;
   // Only iff state is equal to CLAIMED lease_block is not equal to NULL.
   struct dhcp_lease* addresses;
+
+  struct list_head tmp_list;
+  struct list_head claim_list;
 };
 typedef struct ddhcp_block ddhcp_block;
-
-struct ddhcp_block_list {
-  struct ddhcp_block* block;
-  struct list_head list;
-};
-typedef struct ddhcp_block_list ddhcp_block_list;
 
 // DHCP structures
 
@@ -111,7 +108,7 @@ struct ddhcp_config {
   uint32_t loop_timeout;
   unsigned int claiming_blocks_amount;
   ddhcp_block* blocks;
-  ddhcp_block_list claiming_blocks;
+  struct list_head claiming_blocks;
 
   // DHCP packets for later use.
   struct dhcp_packet_list dhcp_packet_cache;
