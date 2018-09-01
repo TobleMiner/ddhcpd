@@ -339,7 +339,7 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  uint8_t* buffer = (uint8_t*) malloc(sizeof(uint8_t) * 1500);
+  uint8_t buffer[1500];
   int bytes = 0;
 
   int efd;
@@ -400,7 +400,7 @@ int main(int argc, char** argv) {
         // DDHCP Roamed DHCP Requests
         int len;
 
-        while ((len = recvfrom(events[i].data.fd, buffer, 1500, 0, (struct sockaddr*) &sender, &sender_len)) > 0) {
+        while ((len = recvfrom(events[i].data.fd, buffer, sizeof(buffer), 0, (struct sockaddr*) &sender, &sender_len)) > 0) {
 #if LOG_LEVEL_LIMIT >= LOG_DEBUG
           char ipv6_sender[INET6_ADDRSTRLEN];
           DEBUG("Receive message from %s\n",
@@ -412,7 +412,7 @@ int main(int argc, char** argv) {
         // DDHCP Block Handling
         int len;
 
-        while ((len = recvfrom(events[i].data.fd, buffer, 1500, 0, (struct sockaddr*) &sender, &sender_len)) > 0) {
+        while ((len = recvfrom(events[i].data.fd, buffer, sizeof(buffer), 0, (struct sockaddr*) &sender, &sender_len)) > 0) {
 #if LOG_LEVEL_LIMIT >= LOG_DEBUG
           char ipv6_sender[INET6_ADDRSTRLEN];
           DEBUG("Receive message from %s\n",
@@ -427,7 +427,7 @@ int main(int argc, char** argv) {
         // DHCP
         int len;
 
-        while ((len = read(config.client_socket, buffer, 1500)) > 0) {
+        while ((len = read(config.client_socket, buffer, sizeof(buffer))) > 0) {
           need_house_keeping = need_house_keeping | dhcp_process(buffer, len, &config);
         }
       } else if (config.control_socket == events[i].data.fd) {
@@ -440,7 +440,7 @@ int main(int argc, char** argv) {
         DEBUG("ControlSocket: new connections\n");
       } else if (events[i].events & EPOLLIN) {
         // Handle commands comming over a control_socket
-        bytes = read(events[i].data.fd, buffer, 1500);
+        bytes = read(events[i].data.fd, buffer, sizeof(buffer));
 
         if (handle_command(events[i].data.fd, buffer, bytes, &config) < 0) {
           ERROR("Malformed command\n");
@@ -460,8 +460,6 @@ int main(int argc, char** argv) {
   } while (daemon_running);
 
   // TODO free dhcp_leases
-  free(buffer);
-
   ddhcp_block_free(&config);
 
   free_option_store(&config.options);
