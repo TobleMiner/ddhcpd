@@ -32,6 +32,8 @@ extern int log_level;
 const int NET = 0;
 const int NET_LEN = 10;
 
+#define MAX_EVENTS 64
+
 void* get_in_addr(struct sockaddr* sa)
 {
   if (sa->sa_family == AF_INET) {
@@ -341,8 +343,8 @@ int main(int argc, char** argv) {
   int bytes = 0;
 
   int efd;
-  int maxevents = 64;
-  struct epoll_event* events;
+  /* Buffer where events are returned */
+  struct epoll_event events[MAX_EVENTS];
 
   efd = epoll_create1(0);
 
@@ -359,9 +361,6 @@ int main(int argc, char** argv) {
     add_fd(efd, config.client_socket, EPOLLIN | EPOLLET);
   }
 
-  /* Buffer where events are returned */
-  events = calloc(maxevents, sizeof(struct epoll_event));
-
   uint8_t need_house_keeping;
   uint32_t loop_timeout = config.loop_timeout = get_loop_timeout(&config);
 
@@ -376,7 +375,7 @@ int main(int argc, char** argv) {
   socklen_t sender_len = sizeof sender;
 
   do {
-    int n = epoll_wait(efd, events, maxevents, loop_timeout);
+    int n = epoll_wait(efd, events, MAX_EVENTS, loop_timeout);
 
     if (n < 0) {
       perror("epoll error:");
@@ -461,7 +460,6 @@ int main(int argc, char** argv) {
   } while (daemon_running);
 
   // TODO free dhcp_leases
-  free(events);
   free(buffer);
 
   ddhcp_block_free(&config);
