@@ -561,7 +561,22 @@ int main(int argc, char** argv) {
     for (int i = 0; i < n; i++) {
       epoll_socket_t *sock = (epoll_socket_t *)events[i].data.ptr;
       if ((events[i].events & EPOLLERR)) {
+        int err;
+        socklen_t errlen = sizeof(err);
+        const char *sockname = "?";
+        for (unsigned j = 0; j < ARRAY_SIZE(config.sockets); j++) {
+          if (sock == &config.sockets[j]) {
+            sockname = socket_id_to_name(j);
+            break;
+          }
+        }
         ERROR("Error in epoll: %i \n", errno);
+        while (!getsockopt(sock->socket, SOL_SOCKET, SO_ERROR, (void *)&err, &errlen)) {
+          if (!err) {
+            break;
+          }
+          ERROR("Socket error on %s socket: %d\n", sockname, err);
+        }
         exit(1);
       } else if (events[i].events & EPOLLIN) {
         ddhcpd_socket_event_t fct = sock->spec->epollin;
