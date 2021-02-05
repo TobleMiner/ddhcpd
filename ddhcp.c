@@ -284,7 +284,7 @@ ATTR_NONNULL_ALL void ddhcp_dhcp_leaseack(struct ddhcp_mcast_packet* request, dd
     DEBUG("ddhcp_dhcp_leaseack(...): No matching packet found, message ignored\n");
   } else {
     // Process packet
-    dhcp_rhdl_ack(DDHCP_SKT_DHCP(config)->fd, packet, config);
+    dhcp_rhdl_ack(DDHCP_SKT_DHCP(config)->socket, packet, config);
     dhcp_packet_free(packet, 1);
     free(packet);
   }
@@ -309,7 +309,7 @@ ATTR_NONNULL_ALL void ddhcp_dhcp_leasenak(struct ddhcp_mcast_packet* request, dd
     DEBUG("ddhcp_dhcp_leaseack(...): No matching packet found, message ignored\n");
   } else {
     // Process packet
-    dhcp_nack(DDHCP_SKT_DHCP(config)->fd, packet, config);
+    dhcp_nack(DDHCP_SKT_DHCP(config)->socket, packet, config);
     dhcp_packet_free(packet, 1);
     free(packet);
   }

@@ -66,7 +66,7 @@ typedef struct ddhcp_renew_payload ddhcp_renew_payload;
 ATTR_NONNULL_ALL struct ddhcp_mcast_packet* new_ddhcp_packet(uint8_t command, ddhcp_config* config);
 ATTR_NONNULL_ALL ssize_t ntoh_mcast_packet(uint8_t* buffer, ssize_t len, struct ddhcp_mcast_packet* packet);
 
-ATTR_NONNULL_ALL ssize_t send_packet_mcast(struct ddhcp_mcast_packet* packet, ddhcp_epoll_data* data);
-ATTR_NONNULL_ALL ssize_t send_packet_direct(struct ddhcp_mcast_packet* packet, struct in6_addr* dest, ddhcp_epoll_data* data);
+ATTR_NONNULL_ALL ssize_t send_packet_mcast(struct ddhcp_mcast_packet* packet, epoll_socket_t *sock);
+ATTR_NONNULL_ALL ssize_t send_packet_direct(struct ddhcp_mcast_packet* packet, struct in6_addr* dest, epoll_socket_t *sock);
 
 #endif

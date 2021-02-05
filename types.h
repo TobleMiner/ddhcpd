@@ -10,6 +10,11 @@
 #include "list.h"
 #include "dhcp_packet.h"
 
+struct ddhcp_config;
+typedef struct ddhcp_config ddhcp_config;
+
+#include "epoll.h"
+
 #define NODE_ID_CMP(id1,id2) memcmp((char*) (id1), (char*) (id2), sizeof(ddhcp_node_id))
 
 // node ident
@@ -138,11 +143,13 @@ enum dhcp_option_code {
 #define SKT_SERVER 1
 #define SKT_DHCP 2
 #define SKT_CONTROL 3
+#define SKT_NETLINK 4
+#define NUM_SOCKETS 5
 
-#define DDHCP_SKT_MCAST(config) ((ddhcp_epoll_data*) config->sockets[SKT_MCAST])
-#define DDHCP_SKT_SERVER(config) ((ddhcp_epoll_data*) config->sockets[SKT_SERVER])
-#define DDHCP_SKT_DHCP(config) ((ddhcp_epoll_data*) config->sockets[SKT_DHCP])
-#define DDHCP_SKT_CONTROL(config) ((ddhcp_epoll_data*) config->sockets[SKT_CONTROL])
+#define DDHCP_SKT_MCAST(config) (&(config)->sockets[SKT_MCAST])
+#define DDHCP_SKT_SERVER(config) (&(config)->sockets[SKT_SERVER])
+#define DDHCP_SKT_DHCP(config) (&(config)->sockets[SKT_DHCP])
+#define DDHCP_SKT_CONTROL(config) (&(config)->sockets[SKT_CONTROL])
 
 
 // configuration and global state
@@ -158,6 +165,8 @@ struct ddhcp_config {
   struct in_addr prefix;
   uint8_t prefix_len;
   uint8_t disable_dhcp;
+  const char *s2c_ifname;
+  const char *s2s_ifname;
 
   // Global Stuff
   time_t next_wakeup;
@@ -175,7 +184,8 @@ struct ddhcp_config {
 
   // Network
   int epoll_fd;
-  void* sockets[4];
+  epoll_socket_spec_t socket_specs[NUM_SOCKETS];
+  epoll_socket_t sockets[NUM_SOCKETS];
 
   // Control
   int control_socket;
@@ -193,7 +203,6 @@ struct ddhcp_config {
   long int statistics[STAT_NUM_OF_FIELDS];
 #endif
 };
-typedef struct ddhcp_config ddhcp_config;
 
 union in_addr_storage {
   struct in_addr in_addr;
@@ -201,5 +210,11 @@ union in_addr_storage {
 };
 
 typedef union in_addr_storage in_addr_storage;
+
+extern const char *socket_names[NUM_SOCKETS];
+
+static inline const char *socket_id_to_name(unsigned id) {
+  return socket_names[id];
+}
 
 #endif

@@ -150,7 +150,7 @@ ATTR_NONNULL_ALL int dhcp_process(uint8_t* buffer, ssize_t len, ddhcp_config* co
     switch (message_type) {
     case DHCPDISCOVER:
       statistics_record(config, STAT_DHCP_RECV_DISCOVER, 1);
-      ret = dhcp_hdl_discover(DDHCP_SKT_DHCP(config)->fd, &dhcp_packet_buf, config);
+      ret = dhcp_hdl_discover(DDHCP_SKT_DHCP(config)->socket, &dhcp_packet_buf, config);
 
       if (ret == 1) {
         INFO("dhcp_process(...): we need to inquire new blocks\n");
@@ -161,7 +161,7 @@ ATTR_NONNULL_ALL int dhcp_process(uint8_t* buffer, ssize_t len, ddhcp_config* co
 
     case DHCPREQUEST:
       statistics_record(config, STAT_DHCP_RECV_REQUEST, 1);
-      dhcp_hdl_request(DDHCP_SKT_DHCP(config)->fd, &dhcp_packet_buf, config);
+      dhcp_hdl_request(DDHCP_SKT_DHCP(config)->socket, &dhcp_packet_buf, config);
       break;
 
     case DHCPRELEASE:
@@ -171,7 +171,7 @@ ATTR_NONNULL_ALL int dhcp_process(uint8_t* buffer, ssize_t len, ddhcp_config* co
 
     case DHCPINFORM:
       statistics_record(config, STAT_DHCP_RECV_INFORM, 1);
-      dhcp_hdl_inform(DDHCP_SKT_DHCP(config)->fd, &dhcp_packet_buf, config);
+      dhcp_hdl_inform(DDHCP_SKT_DHCP(config)->socket, &dhcp_packet_buf, config);
       break;
 
     default:

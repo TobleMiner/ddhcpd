@@ -84,7 +84,7 @@ struct in6_addr* get_ipv6_linklokal(char* interface) {
   return NULL;
 }
 
-ATTR_NONNULL_ALL int netsock_unix_socket_open(ddhcp_epoll_data* data) {
+ATTR_NONNULL_ALL int netsock_unix_socket_open(epoll_socket_t *sockt) {
   int ctl_sock;
   struct sockaddr_un s_un;
   int ret;
@@ -94,9 +94,9 @@ ATTR_NONNULL_ALL int netsock_unix_socket_open(ddhcp_epoll_data* data) {
   memset(&s_un, 0, sizeof(s_un));
   s_un.sun_family = AF_UNIX;
 
-  strncpy(s_un.sun_path, data->interface_name, sizeof(s_un.sun_path));
+  strncpy(s_un.sun_path, sockt->spec->ifname, sizeof(s_un.sun_path));
 
-  unlink(data->interface_name);
+  unlink(sockt->spec->ifname);
 
   if (bind(ctl_sock, (struct sockaddr*)&s_un, sizeof(s_un)) < 0) {
     perror("can't bind control socket");
@@ -116,8 +116,8 @@ ATTR_NONNULL_ALL int netsock_unix_socket_open(ddhcp_epoll_data* data) {
     goto err;
   }
 
-  data->fd = ctl_sock;
-  data->interface_id = 0;
+  sockt->socket = ctl_sock;
+  sockt->ifindex = 0;
   return 0;
 
 err:
@@ -130,53 +130,53 @@ ATTR_NONNULL_ALL void netsocket_unix_socket_close(ddhcp_config* config) {
   remove(config->control_path);
 }
 
-ATTR_NONNULL_ALL int netsock_open_socket_v6(ddhcp_epoll_data* data, struct in6_addr* addr, uint16_t port) {
+ATTR_NONNULL_ALL int netsock_open_socket_v6(epoll_socket_t* sock, struct in6_addr* addr, uint16_t port) {
   
   struct sockaddr_in6 sin6 = { 0 };
   
   sin6.sin6_family = AF_INET6;
   memcpy(&sin6.sin6_addr, addr,sizeof(struct in6_addr));
   sin6.sin6_port = htons(port);
-  sin6.sin6_scope_id = if_nametoindex(data->interface_name);
+  sin6.sin6_scope_id = if_nametoindex(sock->spec->ifname);
 
-  int sock = socket(PF_INET6, SOCK_DGRAM|SOCK_NONBLOCK, IPPROTO_UDP);
-  if (sock < 0) {
+  int sockt = socket(PF_INET6, SOCK_DGRAM|SOCK_NONBLOCK, IPPROTO_UDP);
+  if (sockt < 0) {
     FATAL("netsock_open_socket_v6(...): unable to create socket\n");
   }
 
-  if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, data->interface_name, (socklen_t) strlen(data->interface_name))) {
-    FATAL("netsock_open_socket_v6(...): setsockopt: can't bind to device '%s'\n", data->interface_name);
+  if (setsockopt(sockt, SOL_SOCKET, SO_BINDTODEVICE, sock->spec->ifname, (socklen_t) strlen(sock->spec->ifname))) {
+    FATAL("netsock_open_socket_v6(...): setsockopt: can't bind to device '%s'\n", sock->spec->ifname);
     goto error;
   }
 
-  if (bind(sock, (struct sockaddr*) &sin6, sizeof(struct sockaddr_in6)) < 0) {
-    FATAL("netsock_open_socket_v6(...): unable to bind %s\n",data->interface_name);
+  if (bind(sockt, (struct sockaddr*) &sin6, sizeof(struct sockaddr_in6)) < 0) {
+    FATAL("netsock_open_socket_v6(...): unable to bind %s\n", sock->spec->ifname);
     perror("bind");
     goto error;
   }
 
-  data->fd = sock;
-  data->interface_id = sin6.sin6_scope_id;
+  sock->socket = sockt;
+  sock->ifindex = sin6.sin6_scope_id;
 
   return 1;
 error:
-  close(sock);
+  close(sockt);
   return -1;
 }
 
-ATTR_NONNULL_ALL int netsock_multicast_join(ddhcp_epoll_data* data, struct in6_addr* addr) {
+ATTR_NONNULL_ALL int netsock_multicast_join(epoll_socket_t* sock, struct in6_addr* addr) {
   unsigned int zero = 0;
   struct ipv6_mreq mreq = { 0 };
   
   memcpy(&mreq.ipv6mr_multiaddr, addr,sizeof(struct in6_addr));
-  mreq.ipv6mr_interface = data->interface_id;
+  mreq.ipv6mr_interface = sock->ifindex;
 
-  if (setsockopt(data->fd, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, &mreq, sizeof(struct ipv6_mreq))) {
+  if (setsockopt(sock->socket, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, &mreq, sizeof(struct ipv6_mreq))) {
     perror("can't add multicast membership");
     goto error;
   }
 
-  if (setsockopt(data->fd, IPPROTO_IPV6, IPV6_MULTICAST_LOOP, &zero, sizeof(unsigned int))) {
+  if (setsockopt(sock->socket, IPPROTO_IPV6, IPV6_MULTICAST_LOOP, &zero, sizeof(unsigned int))) {
     perror("can't unset multicast loop");
     goto error;
   }
@@ -184,11 +184,11 @@ ATTR_NONNULL_ALL int netsock_multicast_join(ddhcp_epoll_data* data, struct in6_a
   return 1;
 
 error:
-  close(data->fd);
+  close(sock->socket);
   return -1;
 }
 
-ATTR_NONNULL_ALL int netsock_open_dhcp(ddhcp_epoll_data* data,uint16_t port) {
+ATTR_NONNULL_ALL int netsock_open_dhcp(epoll_socket_t *sockt, uint16_t port) {
   int sock;
   struct sockaddr_in sin;
   struct in_addr address_client;
@@ -208,8 +208,8 @@ ATTR_NONNULL_ALL int netsock_open_dhcp(ddhcp_epoll_data* data,uint16_t port) {
   inet_aton("0.0.0.0", &address_client);
   memcpy(&sin.sin_addr, &address_client, sizeof(sin.sin_addr));
 
-  if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, data->interface_name,
-                 (socklen_t)strlen(data->interface_name) + 1)) {
+  if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, sockt->spec->ifname,
+                 (socklen_t)strlen(sockt->spec->ifname) + 1)) {
     perror("can't bind to broadcast device");
     close(sock);
     return -1;
@@ -227,33 +227,31 @@ ATTR_NONNULL_ALL int netsock_open_dhcp(ddhcp_epoll_data* data,uint16_t port) {
     return -1;
   }
 
-  data->fd = sock;
-  data->interface_id = if_nametoindex(data->interface_name);
+  sockt->socket = sock;
+  sockt->ifindex = if_nametoindex(sockt->spec->ifname);
 
   return sock;
 }
 
 // DDHCPD_SOCKET_INIT_T for all the different socket types we handle
 
-ATTR_NONNULL_ALL int netsock_multicast_init(epoll_data_t data,ddhcp_config* config) {
-  ddhcp_epoll_data* ptr = (ddhcp_epoll_data*) data.ptr;
-  if ((netsock_open_socket_v6(ptr,&in6addr_localmcast,DDHCP_MULTICAST_PORT)) < 0) {
+ATTR_NONNULL_ALL int netsock_multicast_init(epoll_socket_t *sockt, ddhcp_config* config) {
+  if ((netsock_open_socket_v6(sockt, &in6addr_localmcast,DDHCP_MULTICAST_PORT)) < 0) {
     FATAL("netsock_init(...): Unable to open multicast socket\n");
     return -1;
   }
 
-  if (netsock_multicast_join(ptr,&in6addr_localmcast) < 0) {
+  if (netsock_multicast_join(sockt, &in6addr_localmcast) < 0) {
     FATAL("netsock_init(...): Unable to join multicast group\n");
-    close(ptr->fd);
+    close(sockt->socket);
     return -1;
   }
   UNUSED(config);
   return 0;
 }
 
-ATTR_NONNULL_ALL int netsock_server_init(epoll_data_t data,ddhcp_config* config) {
-  ddhcp_epoll_data* ptr = (ddhcp_epoll_data*) data.ptr;
-  if ((netsock_open_socket_v6(ptr,(struct in6_addr*) &in6addr_any,DDHCP_UNICAST_PORT)) < 0) {
+ATTR_NONNULL_ALL int netsock_server_init(epoll_socket_t *sock, ddhcp_config* config) {
+  if ((netsock_open_socket_v6(sock, (struct in6_addr*) &in6addr_any,DDHCP_UNICAST_PORT)) < 0) {
     FATAL("netsock_init(...): Unable to open server socket\n");
     return -1;
   }
@@ -261,9 +259,8 @@ ATTR_NONNULL_ALL int netsock_server_init(epoll_data_t data,ddhcp_config* config)
   return 0;
 }
 
-ATTR_NONNULL_ALL int netsock_dhcp_init(epoll_data_t data,ddhcp_config* config) {
-  ddhcp_epoll_data* ptr = (ddhcp_epoll_data*) data.ptr;
-  if ((netsock_open_dhcp(ptr,config->dhcp_port)) < 0) {
+ATTR_NONNULL_ALL int netsock_dhcp_init(epoll_socket_t *sock, ddhcp_config* config) {
+  if ((netsock_open_dhcp(sock, config->dhcp_port)) < 0) {
     FATAL("netsock_init(...): Unable to open dhcp socket\n");
     return -1;
   }
@@ -271,9 +268,8 @@ ATTR_NONNULL_ALL int netsock_dhcp_init(epoll_data_t data,ddhcp_config* config) {
   return 0;
 }
 
-ATTR_NONNULL_ALL int netsock_control_init(epoll_data_t data,ddhcp_config* config) {
-  ddhcp_epoll_data* ptr = (ddhcp_epoll_data*) data.ptr;
-  if((netsock_unix_socket_open(ptr)) < 0) {
+ATTR_NONNULL_ALL int netsock_control_init(epoll_socket_t *sock,ddhcp_config* config) {
+  if((netsock_unix_socket_open(sock)) < 0) {
     FATAL("netsock_init(...): Unable to open control socket\n");
     return -1;
   }

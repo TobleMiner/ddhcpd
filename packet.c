@@ -263,7 +263,7 @@ ATTR_NONNULL_ALL int hton_packet(struct ddhcp_mcast_packet* packet, char* buffer
   return 0;
 }
 
-ATTR_NONNULL_ALL ssize_t send_packet_mcast(struct ddhcp_mcast_packet* packet, ddhcp_epoll_data* data) {
+ATTR_NONNULL_ALL ssize_t send_packet_mcast(struct ddhcp_mcast_packet* packet, epoll_socket_t* sock) {
   size_t len = (size_t)_packet_size(packet->command, packet->count);
 
   char* buffer = (char*) calloc(1, len);
@@ -279,12 +279,12 @@ ATTR_NONNULL_ALL ssize_t send_packet_mcast(struct ddhcp_mcast_packet* packet, dd
   struct sockaddr_in6 dest_addr = {
     .sin6_family = AF_INET6,
     .sin6_port = htons(DDHCP_MULTICAST_PORT),
-    .sin6_scope_id = data->interface_id
+    .sin6_scope_id = sock->ifindex
   };
 
   memcpy(&dest_addr.sin6_addr, &in6addr_localmcast, sizeof(in6addr_localmcast));
 
-  ssize_t bytes_send = sendto(data->fd, buffer, len, 0, (struct sockaddr*) &dest_addr, sizeof(dest_addr));
+  ssize_t bytes_send = sendto(sock->socket, buffer, len, 0, (struct sockaddr*) &dest_addr, sizeof(dest_addr));
 
   free(buffer);
 
@@ -295,8 +295,8 @@ ATTR_NONNULL_ALL ssize_t send_packet_mcast(struct ddhcp_mcast_packet* packet, dd
   return bytes_send;
 }
 
-ATTR_NONNULL_ALL ssize_t send_packet_direct(struct ddhcp_mcast_packet* packet, struct in6_addr* dest, ddhcp_epoll_data* data) {
-  DEBUG("send_packet_direct(packet,dest,mcsocket:%i,scope:%u)\n", data->fd, data->interface_id);
+ATTR_NONNULL_ALL ssize_t send_packet_direct(struct ddhcp_mcast_packet* packet, struct in6_addr* dest, epoll_socket_t *sock) {
+  DEBUG("send_packet_direct(packet,dest,mcsocket:%i,scope:%u)\n", sock->socket, sock->ifindex);
   size_t len = (size_t)_packet_size(packet->command, packet->count);
 
   char* buffer = (char*) calloc(1, len);
@@ -309,7 +309,7 @@ ATTR_NONNULL_ALL ssize_t send_packet_direct(struct ddhcp_mcast_packet* packet, s
   struct sockaddr_in6 dest_addr = {
     .sin6_family = AF_INET6,
     .sin6_port = htons(DDHCP_UNICAST_PORT),
-    .sin6_scope_id = data->interface_id
+    .sin6_scope_id = sock->ifindex
   };
 
   memcpy(&dest_addr.sin6_addr, dest, sizeof(struct in6_addr));
@@ -324,7 +324,7 @@ ATTR_NONNULL_ALL ssize_t send_packet_direct(struct ddhcp_mcast_packet* packet, s
 
   hton_packet(packet, buffer);
 
-  ssize_t bytes_send = sendto(data->fd, buffer, len, 0, (struct sockaddr*) &dest_addr, sizeof(struct sockaddr_in6));
+  ssize_t bytes_send = sendto(sock->socket, buffer, len, 0, (struct sockaddr*) &dest_addr, sizeof(struct sockaddr_in6));
 
   free(buffer);
 

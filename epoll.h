@@ -1,27 +1,36 @@
 #ifndef _EPOLL_H
 #define _EPOLL_H
 
+#include <stdlib.h>
 #include <sys/epoll.h>
-#include "types.h"
 
-// epoll_data_t is always a void pointer to a ddhcp_epoll_data struct.
-typedef int (*ddhcpd_epoll_event_t)(epoll_data_t,ddhcp_config*);
-typedef int (*ddhcpd_socket_init_t)(epoll_data_t,ddhcp_config*);
+struct epoll_socket;
+struct epoll_socket_spec;
+typedef struct epoll_socket epoll_socket_t;
+typedef struct epoll_socket_spec epoll_socket_spec_t;
 
-struct ddhcp_epoll_data {
-  int fd;
-  int interface_id;
-  char* interface_name;
-  void* data;
-  ddhcpd_socket_init_t setup;
-  ddhcpd_epoll_event_t epollin;
-  ddhcpd_epoll_event_t epollhup;
+struct ddhcp_config;
+typedef struct ddhcp_config ddhcp_config;
+
+typedef int (*ddhcpd_socket_event_t)(epoll_socket_t *, ddhcp_config *);
+
+struct epoll_socket_spec {
+  const char *ifname;
+  ddhcpd_socket_event_t setup;
+  ddhcpd_socket_event_t epollin;
+  ddhcpd_socket_event_t epollhup;
+  ddhcpd_socket_event_t ifindex_changed;
+  uint32_t events;
 };
-typedef struct ddhcp_epoll_data ddhcp_epoll_data;
 
-#define epoll_get_fd(data) (((ddhcp_epoll_data*) data.ptr)->fd)
-#define epoll_data_free(data) (free(data.ptr))
-#define epoll_data_call(data,method,config) data->method((epoll_data_t){.ptr=(void*)data},config)
+struct epoll_socket {
+  int socket;
+  unsigned ifindex;
+  epoll_socket_spec_t *spec;
+  void *ctx;
+};
+
+#include "types.h"
 
 /**
  * Initialize epoll socket.
@@ -29,18 +38,32 @@ typedef struct ddhcp_epoll_data ddhcp_epoll_data;
 void epoll_init(ddhcp_config* config);
 
 /**
- * Initializing a new ddhcp_epoll_data structure
+ * Hangup epoll socket
  */
-ddhcp_epoll_data* epoll_data_new(char* interface_name, ddhcpd_socket_init_t setup, ddhcpd_epoll_event_t epollin,ddhcpd_epoll_event_t epollhup);
-
-/** 
- * Add a file descriptor to an epoll instance.
- */
-void epoll_add_fd(int efd, ddhcp_epoll_data *data, uint32_t events,ddhcp_config* config);
+static inline void epoll_socket_hup(epoll_socket_t *sock, ddhcp_config *config) {
+  sock->spec->epollhup(sock, config);
+}
 
 /**
  * Remove a file descriptor from an epoll instance.
  */
 void del_fd(int efd, int fd);
+
+/**
+ * Free a ddhcpd_epoll_socket instance
+ */
+static inline void ddhcp_epoll_socket_free(epoll_socket_t *sock) {
+  free(sock);
+}
+
+/**
+ * Create socket from spec and add it to epoll fd
+ */
+int epoll_create_and_add(epoll_socket_t *instance, epoll_socket_spec_t *spec, ddhcp_config *config, void *ctx);
+
+/**
+ * Allocate socket based on spec and add it to epoll fd
+ */
+int epoll_alloc_and_add(epoll_socket_t **instance, epoll_socket_spec_t *spec, ddhcp_config *config, void *ctx);
 
 #endif

@@ -2,6 +2,7 @@
 #include <netlink/msg.h>
 #include <netlink/netlink.h>
 #include <netlink/socket.h>
+#include <stdbool.h>
 
 #include "epoll.h"
 #include "logger.h"
@@ -16,7 +17,10 @@ static int callback(struct nl_msg *msg, void* vcfg) {
 
   if (hdr->nlmsg_type == RTM_NEWLINK) {
     struct ifinfomsg* data = NLMSG_DATA(hdr);
-    if (DDHCP_SKT_SERVER(config)->interface_id == data->ifi_index) {
+    if (data->ifi_index < 0) {
+      return 0;
+    }
+    if (DDHCP_SKT_SERVER(config)->ifindex == (unsigned)data->ifi_index) {
       DEBUG("netlink_callback(...): action on server interface\n");
     }
     if (data->ifi_flags & IFF_UP) {
@@ -24,7 +28,7 @@ static int callback(struct nl_msg *msg, void* vcfg) {
     } else {
       DEBUG("netlink_callback(...): iface(%i) down\n",data->ifi_index);
     }
-  } 
+  }
 
   if (hdr->nlmsg_type == RTM_DELLINK) {
     struct ifinfomsg* data = NLMSG_DATA(hdr);
@@ -34,14 +38,12 @@ static int callback(struct nl_msg *msg, void* vcfg) {
   return 0;
 }
 
-ATTR_NONNULL_ALL int netlink_in(epoll_data_t data,ddhcp_config* config) {
+ATTR_NONNULL_ALL int netlink_in(epoll_socket_t *sockt, ddhcp_config* config) {
   UNUSED(config);
-  ddhcp_epoll_data* ptr = (ddhcp_epoll_data*) data.ptr;
-  return nl_recvmsgs_default((struct nl_sock*) ptr->data);
+  return nl_recvmsgs_default((struct nl_sock*)sockt->ctx);
 }
 
-ATTR_NONNULL_ALL int netlink_init(epoll_data_t data,ddhcp_config* config) {
-  ddhcp_epoll_data* ptr = (ddhcp_epoll_data*) data.ptr;
+ATTR_NONNULL_ALL int netlink_init(epoll_socket_t *sockt, ddhcp_config* config) {
   DEBUG("netlink_init(config)\n");
   struct nl_sock *sock;
 
@@ -60,8 +62,8 @@ ATTR_NONNULL_ALL int netlink_init(epoll_data_t data,ddhcp_config* config) {
     FATAL("netlink_init(...): Unable to connect to netlink route module");
     return -1;
   } else {
-    ptr->fd = nl_socket_get_fd(sock);
-    ptr->data = (void*) sock;
+    sockt->socket = nl_socket_get_fd(sock);
+    sockt->ctx = sock;
   }
 
   nl_socket_add_memberships(sock, RTNLGRP_LINK, 0);
@@ -69,9 +71,8 @@ ATTR_NONNULL_ALL int netlink_init(epoll_data_t data,ddhcp_config* config) {
   return 0;
 }
 
-ATTR_NONNULL_ALL int netlink_close(epoll_data_t data, ddhcp_config* config) {
+ATTR_NONNULL_ALL int netlink_close(epoll_socket_t *sockt, ddhcp_config* config) {
   UNUSED(config);
-  ddhcp_epoll_data* ptr = (ddhcp_epoll_data*) data.ptr;
-  nl_socket_free((struct nl_sock*) ptr->data);
+  nl_socket_free((struct nl_sock*)sockt->ctx);
   return 0;
 }

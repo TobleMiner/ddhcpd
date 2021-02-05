@@ -26,6 +26,7 @@
 #include "packet.h"
 #include "statistics.h"
 #include "tools.h"
+#include "util.h"
 #include "version.h"
 
 volatile int daemon_running = 0;
@@ -124,8 +125,8 @@ void handle_signal_terminate(int sig_nr) {
 }
 
 
-ATTR_NONNULL_ALL int hdl_ddhcp_dhcp(epoll_data_t data, ddhcp_config* config) {
-  int fd = epoll_get_fd(data);
+ATTR_NONNULL_ALL int hdl_ddhcp_dhcp(epoll_socket_t *sock, ddhcp_config* config) {
+  int fd = sock->socket;
   ssize_t len;
   struct sockaddr_in6 sender;
   socklen_t sender_len = sizeof sender;
@@ -144,8 +145,8 @@ ATTR_NONNULL_ALL int hdl_ddhcp_dhcp(epoll_data_t data, ddhcp_config* config) {
   return 0;
 }
 
-ATTR_NONNULL_ALL int hdl_ddhcp_block(epoll_data_t data, ddhcp_config* config) {
-  int fd = epoll_get_fd(data);
+ATTR_NONNULL_ALL int hdl_ddhcp_block(epoll_socket_t *sock, ddhcp_config* config) {
+  int fd = sock->socket;
   ssize_t len;
   struct sockaddr_in6 sender;
   socklen_t sender_len = sizeof sender;
@@ -164,8 +165,8 @@ ATTR_NONNULL_ALL int hdl_ddhcp_block(epoll_data_t data, ddhcp_config* config) {
   return 1;
 }
 
-ATTR_NONNULL_ALL int hdl_dhcp(epoll_data_t data, ddhcp_config* config) {
-  int fd = epoll_get_fd(data);
+ATTR_NONNULL_ALL int hdl_dhcp(epoll_socket_t *sock, ddhcp_config* config) {
+  int fd = sock->socket;
   ssize_t len;
   int need_house_keeping = 0;
 
@@ -177,8 +178,8 @@ ATTR_NONNULL_ALL int hdl_dhcp(epoll_data_t data, ddhcp_config* config) {
   return need_house_keeping;
 }
 
-ATTR_NONNULL_ALL int hdl_ctrl_cmd(epoll_data_t data, ddhcp_config* config) {
-  int fd = epoll_get_fd(data);
+ATTR_NONNULL_ALL int hdl_ctrl_cmd(epoll_socket_t *sock, ddhcp_config* config) {
+  int fd = sock->socket;
   ssize_t len;
   // Handle commands comming over a control_socket
   len = read(fd, buffer, 1500);
@@ -192,16 +193,25 @@ ATTR_NONNULL_ALL int hdl_ctrl_cmd(epoll_data_t data, ddhcp_config* config) {
   return 0;
 }
 
-ATTR_NONNULL_ALL int hdl_ctrl_new(epoll_data_t data, ddhcp_config* config) {
+ATTR_NONNULL_ALL static int ctrl_setup(epoll_socket_t *sock, ddhcp_config *config) {
   UNUSED(config);
-  int fd = epoll_get_fd(data);
+  int err;
+  epoll_socket_t *parent = sock->ctx;
+
+  err = accept(parent->socket, NULL, 0);
+  if (err < 0) {
+    return -errno;
+  }
+  sock->socket = err;
+  return 0;
+}
+
+static epoll_socket_spec_t ctrl_spec;
+
+ATTR_NONNULL_ALL int hdl_ctrl_new(epoll_socket_t *sock, ddhcp_config* config) {
+  UNUSED(config);
   // Handle new control socket connections
-  struct sockaddr_un client_fd;
-  unsigned int len = sizeof(client_fd);
-  ddhcp_epoll_data* control_link = epoll_data_new(config->control_path, NULL, hdl_ctrl_cmd, NULL);
-  control_link->fd = accept(fd, (struct sockaddr*) &client_fd, &len);
-  //set_nonblocking(config.client_control_socket);
-  epoll_add_fd(config->epoll_fd, control_link, EPOLLIN | EPOLLET, config);
+  epoll_alloc_and_add(NULL, &ctrl_spec, config, sock);
   DEBUG("ControlSocket: new connections\n");
   return 0;
 }
@@ -238,8 +248,8 @@ int main(int argc, char** argv) {
 
   INIT_LIST_HEAD(&config.dhcp_packet_cache);
 
-  char* interface = (char*)"server0";
-  char* interface_client = (char*)"client0";
+  config.s2s_ifname = "server0";
+  config.s2c_ifname = "client0";
 
   daemon_running = 2;
 
@@ -250,11 +260,11 @@ int main(int argc, char** argv) {
   while ((c = getopt(argc, argv, "C:c:i:St:dvVDhLb:B:N:o:s:H:n:")) != -1) {
     switch (c) {
     case 'i':
-      interface = optarg;
+      config.s2s_ifname = optarg;
       break;
 
     case 'c':
-      interface_client = optarg;
+      config.s2c_ifname = optarg;
       break;
 
     case 'b':
@@ -421,8 +431,8 @@ int main(int argc, char** argv) {
   INFO("CONFIG: timeout=%i\n", config.block_timeout);
   INFO("CONFIG: refresh_factor=%i\n", config.block_refresh_factor);
   INFO("CONFIG: tentative_timeout=%i\n", config.tentative_timeout);
-  INFO("CONFIG: client_interface=%s\n", interface_client);
-  INFO("CONFIG: group_interface=%s\n", interface);
+  INFO("CONFIG: client_interface=%s\n", config.s2c_ifname);
+  INFO("CONFIG: group_interface=%s\n", config.s2s_ifname);
 
   //Register signal handlers
   handle_signal(SIGHUP, SIG_IGN);
@@ -467,20 +477,25 @@ int main(int argc, char** argv) {
 
   epoll_init(&config);
 
-  config.sockets[SKT_MCAST] = epoll_data_new(interface, netsock_multicast_init, hdl_ddhcp_block, NULL);
-  config.sockets[SKT_SERVER] = epoll_data_new(interface, netsock_server_init, hdl_ddhcp_dhcp, NULL);
-  config.sockets[SKT_CONTROL] = epoll_data_new(config.control_path, netsock_control_init, hdl_ctrl_new, NULL);
-  ddhcp_epoll_data* netlink = epoll_data_new(NULL, netlink_init, netlink_in, netlink_close);
+  // Populate socket specifications
+  ctrl_spec = (epoll_socket_spec_t){ config.control_path, ctrl_setup, hdl_ctrl_cmd, NULL, NULL, EPOLLIN | EPOLLET };
+  config.socket_specs[SKT_MCAST] = (epoll_socket_spec_t){ config.s2s_ifname, netsock_multicast_init, hdl_ddhcp_block, NULL, NULL, EPOLLIN | EPOLLET };
+  config.socket_specs[SKT_SERVER] = (epoll_socket_spec_t){ config.s2s_ifname, netsock_server_init, hdl_ddhcp_dhcp, NULL, NULL, EPOLLIN | EPOLLET };
+  config.socket_specs[SKT_CONTROL] = (epoll_socket_spec_t){ config.control_path, netsock_control_init, hdl_ctrl_new, NULL, NULL, EPOLLIN | EPOLLET };
+  config.socket_specs[SKT_NETLINK] = (epoll_socket_spec_t){ NULL, netlink_init, netlink_in, netlink_close, NULL, EPOLLIN | EPOLLET };
 
-  // Trigger socket initializing and register to EPOLL
-  epoll_add_fd(config.epoll_fd, config.sockets[SKT_MCAST], EPOLLIN | EPOLLET,&config);
-  epoll_add_fd(config.epoll_fd, config.sockets[SKT_SERVER], EPOLLIN | EPOLLET,&config);
-  epoll_add_fd(config.epoll_fd, config.sockets[SKT_CONTROL], EPOLLIN | EPOLLET,&config);
-  epoll_add_fd(config.epoll_fd, netlink, EPOLLIN | EPOLLET,&config);
+  if (!config.disable_dhcp) {
+    config.socket_specs[SKT_DHCP] = (epoll_socket_spec_t){ config.s2c_ifname, netsock_dhcp_init, hdl_dhcp, NULL, NULL, EPOLLIN | EPOLLET };
+  }
 
-  if (config.disable_dhcp == 0) {
-    config.sockets[SKT_DHCP] = epoll_data_new(interface_client, netsock_dhcp_init, hdl_dhcp, NULL);
-    epoll_add_fd(config.epoll_fd, config.sockets[SKT_DHCP], EPOLLIN | EPOLLET,&config);
+  // Create sockets and register them with epoll
+  assert(ARRAY_SIZE(config.sockets) == ARRAY_SIZE(config.socket_specs));
+  for (unsigned i = 0; i < ARRAY_SIZE(config.sockets); i++) {
+    int err = epoll_create_and_add(&config.sockets[i], &config.socket_specs[i], &config, NULL);
+    if (err) {
+      FATAL("Failed to create %s socket: %d\n", socket_id_to_name(i), err);
+      exit(2);
+    }
   }
 
   // Event buffer
@@ -544,16 +559,16 @@ int main(int argc, char** argv) {
     }
 
     for (int i = 0; i < n; i++) {
-      ddhcp_epoll_data* data = (ddhcp_epoll_data*) events[i].data.ptr;
+      epoll_socket_t *sock = (epoll_socket_t *)events[i].data.ptr;
       if ((events[i].events & EPOLLERR)) {
         ERROR("Error in epoll: %i \n", errno);
         exit(1);
       } else if (events[i].events & EPOLLIN) {
-        ddhcpd_epoll_event_t fct = data->epollin;
-        need_house_keeping |= fct(events[i].data,&config);
+        ddhcpd_socket_event_t fct = sock->spec->epollin;
+        need_house_keeping |= fct(sock, &config);
       } else if (events[i].events & EPOLLHUP) {
-        ddhcpd_epoll_event_t fct = data->epollhup;
-        need_house_keeping |= fct(events[i].data,&config);
+        ddhcpd_socket_event_t fct = sock->spec->epollhup;
+        need_house_keeping |= fct(sock, &config);
       } 
     }
 
@@ -580,7 +595,7 @@ int main(int argc, char** argv) {
   //close(config.mcast_socket);
   //close(config.client_socket);
   //close(config.control_socket);
-  epoll_data_call(netlink,epollhup,(&config));
+  epoll_socket_hup(&config.sockets[SKT_NETLINK], &config);
 
   remove(config.control_path);
 
