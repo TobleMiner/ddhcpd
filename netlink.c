@@ -74,6 +74,8 @@ ATTR_NONNULL_ALL int netlink_in(epoll_socket_t *sockt, ddhcp_config* config) {
 ATTR_NONNULL_ALL int netlink_init(epoll_socket_t *sockt, ddhcp_config* config) {
   DEBUG("netlink_init(config)\n");
   struct nl_sock *sock;
+  int one = 1;
+  socklen_t one_len = sizeof(one);
 
   sock = nl_socket_alloc();
 
@@ -93,6 +95,7 @@ ATTR_NONNULL_ALL int netlink_init(epoll_socket_t *sockt, ddhcp_config* config) {
     nl_socket_set_buffer_size(sock, NETLINK_RX_BUF_SIZE, NETLINK_TX_BUF_SIZE);
     sockt->socket = nl_socket_get_fd(sock);
     sockt->ctx = sock;
+    setsockopt(sockt->socket, SOL_NETLINK, NETLINK_NO_ENOBUFS, &one, one_len);
   }
 
   nl_socket_add_memberships(sock, RTNLGRP_LINK, 0);
