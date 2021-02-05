@@ -113,3 +113,9 @@ int epoll_alloc_and_add(epoll_socket_t **instance, epoll_socket_spec_t *spec, dd
 
   return err;
 }
+
+void epoll_remove_and_close(epoll_socket_t *sock, ddhcp_config *config) {
+  del_fd(config->epoll_fd, sock->socket);
+  close(sock->socket);
+  sock->socket = 0;
+}

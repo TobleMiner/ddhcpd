@@ -57,6 +57,11 @@ static inline void ddhcp_epoll_socket_free(epoll_socket_t *sock) {
 }
 
 /**
+ * Call change callback if socket changed
+ */
+int epoll_update_socket(epoll_socket_t *instance, ddhcp_config *config);
+
+/**
  * Create socket from spec and add it to epoll fd
  */
 int epoll_create_and_add(epoll_socket_t *instance, epoll_socket_spec_t *spec, ddhcp_config *config, void *ctx);
@@ -65,5 +70,10 @@ int epoll_create_and_add(epoll_socket_t *instance, epoll_socket_spec_t *spec, dd
  * Allocate socket based on spec and add it to epoll fd
  */
 int epoll_alloc_and_add(epoll_socket_t **instance, epoll_socket_spec_t *spec, ddhcp_config *config, void *ctx);
+
+/**
+ * Remove socket from epoll and close it
+ */
+void epoll_remove_and_close(epoll_socket_t *sock, ddhcp_config *config);
 
 #endif

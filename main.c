@@ -216,6 +216,11 @@ ATTR_NONNULL_ALL int hdl_ctrl_new(epoll_socket_t *sock, ddhcp_config* config) {
   return 0;
 }
 
+ATTR_NONNULL_ALL static int ifindex_changed(epoll_socket_t *sock, ddhcp_config *config) {
+  epoll_remove_and_close(sock, config);
+  return epoll_create_and_add(sock, sock->spec, config, NULL);
+}
+
 int main(int argc, char** argv) {
 
   srand((unsigned int)time(NULL));
@@ -479,13 +484,13 @@ int main(int argc, char** argv) {
 
   // Populate socket specifications
   ctrl_spec = (epoll_socket_spec_t){ config.control_path, ctrl_setup, hdl_ctrl_cmd, NULL, NULL, EPOLLIN | EPOLLET };
-  config.socket_specs[SKT_MCAST] = (epoll_socket_spec_t){ config.s2s_ifname, netsock_multicast_init, hdl_ddhcp_block, NULL, NULL, EPOLLIN | EPOLLET };
-  config.socket_specs[SKT_SERVER] = (epoll_socket_spec_t){ config.s2s_ifname, netsock_server_init, hdl_ddhcp_dhcp, NULL, NULL, EPOLLIN | EPOLLET };
+  config.socket_specs[SKT_MCAST] = (epoll_socket_spec_t){ config.s2s_ifname, netsock_multicast_init, hdl_ddhcp_block, NULL, ifindex_changed, EPOLLIN | EPOLLET };
+  config.socket_specs[SKT_SERVER] = (epoll_socket_spec_t){ config.s2s_ifname, netsock_server_init, hdl_ddhcp_dhcp, NULL, ifindex_changed, EPOLLIN | EPOLLET };
   config.socket_specs[SKT_CONTROL] = (epoll_socket_spec_t){ config.control_path, netsock_control_init, hdl_ctrl_new, NULL, NULL, EPOLLIN | EPOLLET };
   config.socket_specs[SKT_NETLINK] = (epoll_socket_spec_t){ NULL, netlink_init, netlink_in, netlink_close, NULL, EPOLLIN | EPOLLET };
 
   if (!config.disable_dhcp) {
-    config.socket_specs[SKT_DHCP] = (epoll_socket_spec_t){ config.s2c_ifname, netsock_dhcp_init, hdl_dhcp, NULL, NULL, EPOLLIN | EPOLLET };
+    config.socket_specs[SKT_DHCP] = (epoll_socket_spec_t){ config.s2c_ifname, netsock_dhcp_init, hdl_dhcp, NULL, ifindex_changed, EPOLLIN | EPOLLET };
   }
 
   // Create sockets and register them with epoll
